@@ -1,0 +1,109 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "commonSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Common settings object"
+      }
+    },
+    "storageSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Storage settings object"
+      }
+    },
+    "networkSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Network settings object"
+      }
+    },
+    "machineSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Machine settings object"
+      }
+    }
+  },
+  "variables": {},
+  "resources": [
+    {
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[toUpper(concat(parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0')))]",
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "vmName",
+        "count": "[parameters('machineSettings').machineCount]"
+      },
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets', parameters('commonSettings').availabilitySetName)]"
+        },
+        "hardwareProfile": {
+          "vmSize": "[parameters('machineSettings').vmSize]"
+        },
+        "osProfile": {
+          "computerName": "[toUpper(concat(parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0')))]",
+          "adminUsername": "[parameters('machineSettings').adminUsername]",
+          "adminPassword": "[parameters('machineSettings').adminPassword]",
+          "windowsConfiguration": {
+            "provisionVMAgent": true,
+            "enableAutomaticUpdates": true
+          }
+        },
+        "storageProfile": {
+          "imageReference": "[parameters('machineSettings').osImageReference]",
+          "osDisk": {
+            "name": "[toUpper(concat(parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-OSDISK.vhd'))]",
+            "vhd": {
+              "uri": "[toLower(concat(parameters('storageSettings').destinationVhdsContainer, parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-osdisk.vhd'))]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          },
+          "dataDisks": [
+            {
+              "name": "[toUpper(concat(parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-DATADISK01', '.vhd'))]",
+              "diskSizeGB": "[parameters('storageSettings').diskSizeinGB]",
+              "lun": 0,
+              "vhd": {
+                "uri": "[toLower(concat(parameters('storageSettings').destinationdataDiskContainer, parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-datadisk01' , '.vhd'))]"
+              },
+              "caching": "[parameters('storageSettings').dataDiskCachingType]",
+              "createOption": "Empty"
+            },
+            {
+              "name": "[toUpper(concat(parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-DATADISK02', '.vhd'))]",
+              "diskSizeGB": "[parameters('storageSettings').diskSizeinGB]",
+              "lun": 1,
+              "vhd": {
+                "uri": "[toLower(concat(parameters('storageSettings').destinationdataDiskContainer, parameters('machineSettings').machineNamePrefix, padLeft(copyIndex(1),2,'0'), '-datadisk02' , '.vhd'))]"
+              },
+              "caching": "[parameters('storageSettings').dataDiskCachingType]",
+              "createOption": "Empty"
+            }
+          ]
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[toUpper(resourceId('Microsoft.Network/networkInterfaces', concat(parameters('commonSettings').NicName, padLeft(copyIndex(1),2,'0'), '-NIC')))]",
+              "properties": {
+                "primary": true
+              }
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": "[parameters('machineSettings').enableDiagnostics]",
+            "storageUri": "[toLower(concat('http://',parameters('storageSettings').diagStorageAccountName,'.blob.core.windows.net'))]"
+          }
+        }
+      }
+    }
+    ]
+    }

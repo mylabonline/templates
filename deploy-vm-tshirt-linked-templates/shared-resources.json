@@ -1,0 +1,122 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "commonSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Common settings object"
+      }
+    },
+    "storageSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Storage settings object"
+      }
+    },
+    "networkSettings": {
+      "type": "object",
+      "metadata": {
+        "Description": "Network settings object"
+      }
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "name": "[toUpper(parameters('networkSettings').securityGroupName)]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "RDP",
+            "properties": {
+              "description": "Allows RDP traffic",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "3389",
+              "sourceAddressPrefix": "*",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 100,
+              "direction": "Inbound"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[toUpper(concat(parameters('commonSettings').NicName, padLeft(copyIndex(1),2,'0'), '-NIC'))]",
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Network/networkSecurityGroups/', toUpper(parameters('networkSettings').securityGroupName))]"
+      ],
+
+      "copy": {
+        "name": "NicCount",
+        "count": "[parameters('networkSettings').nicCount]"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[parameters('networkSettings').subnetRef]"
+              }
+            }
+          }
+        ],
+        "networkSecurityGroup": {
+          "id": "[resourceId('Microsoft.Network/networkSecurityGroups', toUpper(parameters('networkSettings').securityGroupName))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[toLower(parameters('storageSettings').vhdStorageAccountName)]",
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "storageAccountsLoop",
+        "count": "[parameters('storageSettings').storageAccountCount]"
+      },
+      "properties": {
+        "accountType": "[parameters('storageSettings').OSStorageAccountType]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[toLower(parameters('storageSettings').dataDiskStorageAccountName)]",
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "storageAccountsLoop",
+        "count": "[parameters('storageSettings').storageAccountCount]"
+      },
+      "properties": {
+        "accountType": "[parameters('storageSettings').dataDiskStorageAccountType]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[toLower(parameters('storageSettings').diagStorageAccountName)]",
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    },
+    {
+      "apiVersion": "[parameters('commonSettings').apiVersion]",
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "[toUpper(parameters('commonSettings').availabilitySetName)]",
+      "location": "[resourceGroup().location]",
+      "properties": {}
+    }
+  ]
+}
