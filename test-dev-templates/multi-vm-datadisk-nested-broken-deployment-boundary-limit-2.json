@@ -1,0 +1,295 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "Application Acronym": {
+      "type": "string",
+      "maxLength": 7,
+      "metadata": {
+        "description": "Specify your server name acronym upto 7 characters. The naming convention of your server will be AZUEBTAPP01 where APP is your server acronym."
+      }
+    },
+    "Number of VMs to Deploy": {
+      "type": "int",
+      "defaultValue": 2,
+      "allowedValues": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "metadata": {
+        "description": "Select the number of virtual machines that will be deployed. All virtual machines will be placed in the same Availability Set, and when deploying more then 1 virtual machine you will qualify for Microsoft Azure SLA."
+      }
+    },
+    "VM Admin Username": {
+      "type": "string",
+      "defaultValue": "azureadmin",
+      "metadata": {
+        "description": "The name of the local administrator of the new VM. Exclusion list: 'admin','administrator"
+      }
+    },
+    "VM Admin Password": {
+      "type": "securestring",
+      "minLength": 12,
+      "metadata": {
+        "description": "The password for the local administrator account of the new VM"
+      }
+    },
+    "Select Windows OS": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-R2-Datacenter"
+      ],
+      "metadata": {
+        "Description": "The Windows version for the VM. This will pick a fully patched image of the selected Windows version."
+      }
+    },
+    "Select VM Size": {
+      "type": "string",
+      "defaultValue": "Standard_DS2_v2",
+      "allowedValues": [
+        "Standard_DS2_v2",
+        "Standard_DS3_v2",
+        "Standard_DS4_v2"
+      ],
+      "metadata": {
+        "description": "Please select one of the available Virtual Machine sizes. This size will be provisioned for all Virtual Machines in this deployment."
+      }
+    },
+    "O/S Disk Storage Type": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_GRS",
+        "Premium_LRS"
+      ],
+      "metadata": {
+        "description": "Select Storage Account Type. If you do not know use Standard_LRS."
+      }
+    },
+    "Data Disk Storage Type": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_GRS",
+        "Premium_LRS"
+      ],
+      "metadata": {
+        "description": "Select Storage Account Type. If you do not know use Standard_LRS."
+      }
+    },
+    "How Many Data Disks?": {
+      "type": "array",
+      "defaultValue": [ 1, 2 ]
+    },
+    "Data Disk Size in GB": {
+      "type": "string",
+      "defaultValue": "128",
+      "allowedValues": [
+        "128",
+        "512",
+        "1023"
+      ],
+      "metadata": {
+        "description": "Select Storage Account Type. If you do not know use Standard_LRS."
+      }
+    },
+    "Select Subnet for VMs": {
+      "type": "string",
+      "defaultValue": "Mid_Tier_1",
+      "allowedValues": [
+        "Front_End_Net1",
+        "Mid_Tier_1",
+        "Back_End_1"
+      ],
+      "metadata": {
+        "description": "Existing subnet - Front_End Subnet for DMZ/Public, Mid_Tier for Applications such as SQL, Back_End for private services such as Domain Controllers."
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "metadata": {
+        "description": "The current datetime, as a string, to force the request to go through ARM even if all fields are the same as last ARM deployment of this template; example in parameters file is in MM/dd/yyyy H:mm:ss tt format"
+      }
+    }
+  },
+  "variables": {
+    "osDiskStorageAccountName": "[toLower(concat(variables('vmName'), 'osdisks'))]",
+    "osDiskStorageAccountType": "[parameters('O/S Disk Storage Type')]",
+    "dataStorageAccountName": "[toLower(concat(variables('vmName'), 'datadisks'))]",
+    "dataDiskStorageAccountType": "[parameters('Data Disk Storage Type')]",
+    "diagnosticsStorageAccountName": "[toLower(concat(variables('vmName'),'diagnostics'))]",
+    "diagnosticsStorageAccountResourceGroup": "[resourceGroup().name]",
+    "location": "[resourceGroup().location]",
+    "imagePublisher": "MicrosoftWindowsServer",
+    "imageOffer": "WindowsServer",
+    "windowsOSVersion": "[parameters('Select Windows OS')]",
+    "apiVersion": "2015-06-15",
+    "compute": {
+      "virtualMachines": { "extensions": "2015-06-15" }
+    },
+    "vmName": "[toUpper(concat('AZUEBT', parameters('Application Acronym')))]",
+    "vmCount": "[parameters('Number of VMs to Deploy')]",
+    "vmSize": "[parameters('Select VM Size')]",
+    "availabilitySetName": "[concat(variables('vmName'),'-AS')]",
+    "vnetRG": "TDAY-RG",
+    "existingVNETName": "US_EAST_Prod_1",
+    "vnetID": "[resourceId(variables('vnetRG'), 'Microsoft.Network/virtualNetworks', variables('existingVNETName'))]",
+    "subnetId": "[concat(variables('vnetID'),'/subnets/', variables('existingSubnetName'))]",
+    "existingSubnetName": "[parameters('Select Subnet for VMs')]",
+    "accountid": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', variables('diagnosticsStorageAccountResourceGroup'), '/providers/', 'Microsoft.Storage/storageAccounts/', variables('diagnosticsStorageAccountName'))]",
+    "wadlogs": "<WadCfg> <DiagnosticMonitorConfiguration overallQuotaInMB=\"4096\" xmlns=\"http://schemas.microsoft.com/ServiceHosting/2010/10/DiagnosticsConfiguration\"> <DiagnosticInfrastructureLogs scheduledTransferLogLevelFilter=\"Error\"/> <WindowsEventLog scheduledTransferPeriod=\"PT1M\" > <DataSource name=\"Application!*[System[(Level = 1 or Level = 2)]]\" /> <DataSource name=\"Security!*[System[(Level = 1 or Level = 2)]]\" /> <DataSource name=\"System!*[System[(Level = 1 or Level = 2)]]\" /></WindowsEventLog>",
+    "wadperfcounters1": "<PerformanceCounters scheduledTransferPeriod=\"PT1M\"><PerformanceCounterConfiguration counterSpecifier=\"\\Processor(_Total)\\% Processor Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"CPU utilization\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Processor(_Total)\\% Privileged Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"CPU privileged time\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Processor(_Total)\\% User Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"CPU user time\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Processor Information(_Total)\\Processor Frequency\" sampleRate=\"PT15S\" unit=\"Count\"><annotation displayName=\"CPU frequency\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\System\\Processes\" sampleRate=\"PT15S\" unit=\"Count\"><annotation displayName=\"Processes\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Process(_Total)\\Thread Count\" sampleRate=\"PT15S\" unit=\"Count\"><annotation displayName=\"Threads\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Process(_Total)\\Handle Count\" sampleRate=\"PT15S\" unit=\"Count\"><annotation displayName=\"Handles\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Memory\\% Committed Bytes In Use\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"Memory usage\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Memory\\Available Bytes\" sampleRate=\"PT15S\" unit=\"Bytes\"><annotation displayName=\"Memory available\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Memory\\Committed Bytes\" sampleRate=\"PT15S\" unit=\"Bytes\"><annotation displayName=\"Memory committed\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\Memory\\Commit Limit\" sampleRate=\"PT15S\" unit=\"Bytes\"><annotation displayName=\"Memory commit limit\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\% Disk Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"Disk active time\" locale=\"en-us\"/></PerformanceCounterConfiguration>",
+    "wadperfcounters2": "<PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\% Disk Read Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"Disk active read time\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\% Disk Write Time\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"Disk active write time\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Transfers/sec\" sampleRate=\"PT15S\" unit=\"CountPerSecond\"><annotation displayName=\"Disk operations\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Reads/sec\" sampleRate=\"PT15S\" unit=\"CountPerSecond\"><annotation displayName=\"Disk read operations\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Writes/sec\" sampleRate=\"PT15S\" unit=\"CountPerSecond\"><annotation displayName=\"Disk write operations\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Bytes/sec\" sampleRate=\"PT15S\" unit=\"BytesPerSecond\"><annotation displayName=\"Disk speed\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec\" sampleRate=\"PT15S\" unit=\"BytesPerSecond\"><annotation displayName=\"Disk read speed\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec\" sampleRate=\"PT15S\" unit=\"BytesPerSecond\"><annotation displayName=\"Disk write speed\" locale=\"en-us\"/></PerformanceCounterConfiguration><PerformanceCounterConfiguration counterSpecifier=\"\\LogicalDisk(_Total)\\% Free Space\" sampleRate=\"PT15S\" unit=\"Percent\"><annotation displayName=\"Disk free space (percentage)\" locale=\"en-us\"/></PerformanceCounterConfiguration></PerformanceCounters>",
+    "wadcfgxstart": "[concat(variables('wadlogs'), variables('wadperfcounters1'), variables('wadperfcounters2'), '<Metrics resourceId=\"')]",
+    "wadmetricsresourceid": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name , '/providers/', 'Microsoft.Compute/virtualMachines/')]",
+    "wadcfgxend": "\"><MetricAggregation scheduledTransferPeriod=\"PT1H\"/><MetricAggregation scheduledTransferPeriod=\"PT1M\"/></Metrics></DiagnosticMonitorConfiguration></WadCfg>",
+    "automationRegistrationURL": "https://eus2-agentservice-prod-1.azure-automation.net/accounts/e72febbf70d1dd7c081",
+    "automationNodeConfigurationName": "BCODSC_DJ_WU_SEP.loost",
+    "automationconfigurationMode": "ApplyOnly",
+    "automationconfigurationModeFrequencyMins": "60",
+    "automationrefreshFrequencyMins": "30",
+    "automationrebootNodeIfNeeded": true,
+    "automationactionAfterReboot": "ContinueConfiguration",
+    "automationallowModuleOverwrite": true
+  },
+
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('osDiskStorageAccountName')]",
+      "apiVersion": "[variables('apiVersion')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "[variables('osDiskStorageAccountType')]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('dataStorageAccountName')]",
+      "apiVersion": "[variables('apiVersion')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "[variables('dataDiskStorageAccountType')]"
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('diagnosticsStorageAccountName')]",
+      "apiVersion": "[variables('apiVersion')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "accountType": "Standard_LRS"
+      }
+    },
+    {
+      "type": "Microsoft.Compute/availabilitySets",
+      "name": "[variables('availabilitySetName')]",
+      "apiVersion": "[variables('apiVersion')]",
+      "location": "[resourceGroup().location]"
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "name": "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'),'-NIC1')]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "nicLoop",
+        "count": "[parameters('Number of VMs to Deploy')]"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('subnetId')]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "2015-01-01",
+      "name": "[concat('nested-', copyIndex())]",
+      "type": "Microsoft.Resources/deployments",
+      "copy": {
+        "name": "deploycopy",
+        "count": "[parameters('Number of VMs to Deploy')]"
+      },
+      "properties": {
+        "mode": "Incremental",
+        "templateLink": {
+          "uri": "https://raw.githubusercontent.com/tfitzmac/TemplateTests/master/nesteddatadisks.json",
+          "contentVersion": "1.0.0.0"
+        },
+        "parameters": {
+          "vmName": { "value": "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'))]" },
+          "storageAccountName": { "value": "[variables('dataStorageAccountName')]" },
+          "numDataDisks": { "value": "[parameters('How Many Data Disks?')[copyIndex()]]" }
+        }
+
+      }
+    },
+    {
+      "apiVersion": "[variables('apiVersion')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "name": "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'))]",
+      "location": "[resourceGroup().location]",
+      "copy": {
+        "name": "virtualMachineLoop",
+        "count": "[parameters('Number of VMs to Deploy')]"
+      },
+      "dependsOn": [
+        "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'),'-NIC1')]",
+        "[concat('Microsoft.Storage/storageAccounts/', variables('dataStorageAccountName'))]"
+      ],
+      "properties": {
+        "availabilitySet": {
+          "id": "[resourceId('Microsoft.Compute/availabilitySets', variables('availabilitySetName'))]"
+        },
+        "hardwareProfile": {
+          "vmSize": "[parameters('Select VM Size')]"
+        },
+        "osProfile": {
+          "computerName": "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'))]",
+          "adminUsername": "[parameters('VM Admin Username')]",
+          "adminPassword": "[parameters('VM Admin Password')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('imagePublisher')]",
+            "offer": "[variables('imageOffer')]",
+            "sku": "[variables('windowsOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "[concat(variables('vmName'), padLeft(copyIndex(1),2,'0'), '-OSDISK')]",
+            "vhd": {
+              "uri": "[concat('http://',variables('osDiskStorageAccountName'),'.blob.core.windows.net/vhds/',concat(toLower(variables('vmName')), padLeft(copyIndex(1),2,'0')),'-osdisk','.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          },
+          "dataDisks": "[reference(concat('nested-', copyIndex())).outputs.result.value]"
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', toUpper(concat(variables('vmName'), padLeft(copyIndex(1),2,'0'),'-NIC1')))]"
+            }
+          ]
+        }
+      }
+
+    }
+  ]
+}
